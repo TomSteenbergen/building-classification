@@ -18,17 +18,17 @@ LOGGER = logging.getLogger('train')
 
 # Set paths and parameters
 IMAGE_SIZE = 256
-BATCH_SIZE = 20
+BATCH_SIZE = 32
 N_EPOCHS = 100
 
 CLASSES = ['house', 'apartment_building-outdoor']  # We could add a third class: 'street' (other).
 N_TRAIN_SAMPLES = 10000
 N_VALIDATION_SAMPLES = 200
 
-USE_CACHE = False
+USE_CACHE = True
 
 TRAIN_DIR = "input_files/train_building"  # Includes data on each class grouped in a subdirectory.
-VALIDATION_DIR = "input_files/val_building"
+VALIDATION_DIR = "input_files/val_building"  # Link: http://places2.csail.mit.edu/download.html
 
 OUTPUT_DIR = f"output_files/{str(datetime.utcnow())[:16]}/"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -68,8 +68,6 @@ def compute_bottleneck_features():
     train_bottleneck_features = model.predict_generator(train_generator,
                                                         N_TRAIN_SAMPLES // BATCH_SIZE)
     LOGGER.info("Train bottleneck features computed in %d seconds.", time.perf_counter() - t0)
-    LOGGER.info("Saving training bottleneck features in %s", TRAIN_BOTTLENECK_FEATURES_PATH)
-    np.save(TRAIN_BOTTLENECK_FEATURES_PATH, train_bottleneck_features)
 
     LOGGER.info("Setting up validation data generator.")
     val_datagen = ImageDataGenerator(rescale=1. / 255)
@@ -87,8 +85,6 @@ def compute_bottleneck_features():
     val_bottleneck_features = model.predict_generator(val_generator,
                                                       N_VALIDATION_SAMPLES // BATCH_SIZE)
     LOGGER.info("Validation bottleneck features computed in %d seconds.", time.perf_counter() - t0)
-    LOGGER.info("Saving validation bottleneck features in %s", VAL_BOTTLENECK_FEATURES_PATH)
-    np.save(VAL_BOTTLENECK_FEATURES_PATH, val_bottleneck_features)
 
     return train_bottleneck_features, val_bottleneck_features
 
@@ -111,6 +107,10 @@ def get_bottleneck_features(use_cache=False):
     else:
         LOGGER.info("No cache used. Computing bottleneck layers from scratch.")
         train_bottleneck_features, val_bottleneck_features = compute_bottleneck_features()
+        LOGGER.info("Saving training bottleneck features in %s", TRAIN_BOTTLENECK_FEATURES_PATH)
+        np.save(TRAIN_BOTTLENECK_FEATURES_PATH, train_bottleneck_features)
+        LOGGER.info("Saving validation bottleneck features in %s", VAL_BOTTLENECK_FEATURES_PATH)
+        np.save(VAL_BOTTLENECK_FEATURES_PATH, val_bottleneck_features)
 
     return train_bottleneck_features, val_bottleneck_features
 
@@ -203,7 +203,7 @@ def get_data_generators():
     train_generator = train_datagen.flow_from_directory(
         TRAIN_DIR,
         target_size=(IMAGE_SIZE, IMAGE_SIZE),
-        batch_size=TRAIN_DIR,
+        batch_size=BATCH_SIZE,
         classes=CLASSES,
         class_mode='binary')
 
