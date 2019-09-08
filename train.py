@@ -1,6 +1,8 @@
 import logging
 import math
+import os
 import sys
+import time
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -15,14 +17,6 @@ from keras.preprocessing.image import ImageDataGenerator
 LOGGER = logging.getLogger('train')
 
 # Set paths and parameters
-TRAIN_DIR = "input_files/train_building"  # Includes data on each class grouped in a subdirectory.
-VALIDATION_DIR = "input_files/val_building"
-
-OUTPUT_DIR = f"output_files/{datetime.utcnow()}/"
-TOP_MODEL_WEIGHTS_PATH = OUTPUT_DIR + "bottleneck_weights.h5"
-MODEL_CHECKPOINT_PATH = OUTPUT_DIR + "model_checkpoints/epoch_{epoch:02d}_val_acc_{val_acc:.2f}.h5"
-FINAL_MODEL_PATH = OUTPUT_DIR + "final_building_model.h5"
-
 IMAGE_SIZE = 256
 BATCH_SIZE = 20
 N_EPOCHS = 100
@@ -31,8 +25,23 @@ CLASSES = ['house', 'apartment_building-outdoor']  # We could add a third class:
 N_TRAIN_SAMPLES = 10000
 N_VALIDATION_SAMPLES = 200
 
+USE_CACHE = False
 
-def save_bottleneck_features():
+TRAIN_DIR = "input_files/train_building"  # Includes data on each class grouped in a subdirectory.
+VALIDATION_DIR = "input_files/val_building"
+
+OUTPUT_DIR = f"output_files/{str(datetime.utcnow())[:16]}/"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+TRAIN_BOTTLENECK_FEATURES_PATH = f"input_files/train_bottleneck_features_{CLASSES}.npy"
+VAL_BOTTLENECK_FEATURES_PATH = f"input_files/val_bottleneck_features_{CLASSES}.npy"
+
+TOP_MODEL_WEIGHTS_PATH = OUTPUT_DIR + "bottleneck_weights.h5"
+MODEL_CHECKPOINT_PATH = OUTPUT_DIR + "model_checkpoints/epoch_{epoch:02d}_val_acc_{val_acc:.2f}.h5"
+FINAL_MODEL_PATH = OUTPUT_DIR + "final_building_model.h5"
+
+
+def compute_bottleneck_features():
     """
     Cache the feature values of the data in the bottleneck layer in order to speed up training.
 
@@ -52,11 +61,15 @@ def save_bottleneck_features():
         classes=CLASSES,
         class_mode=None,
         shuffle=False)
-    LOGGER.info("Class indices train set: %s", train_generator.class_indices)
 
+    LOGGER.info("Class indices train set: %s", train_generator.class_indices)
     LOGGER.info("Getting bottleneck features of the train set.")
+    t0 = time.perf_counter()
     train_bottleneck_features = model.predict_generator(train_generator,
                                                         N_TRAIN_SAMPLES // BATCH_SIZE)
+    LOGGER.info("Train bottleneck features computed in %d seconds.", time.perf_counter() - t0)
+    LOGGER.info("Saving training bottleneck features in %s", TRAIN_BOTTLENECK_FEATURES_PATH)
+    np.save(TRAIN_BOTTLENECK_FEATURES_PATH, train_bottleneck_features)
 
     LOGGER.info("Setting up validation data generator.")
     val_datagen = ImageDataGenerator(rescale=1. / 255)
@@ -69,10 +82,35 @@ def save_bottleneck_features():
         shuffle=False)
 
     LOGGER.info("Class indices validation set: %s", val_generator.class_indices)
-
     LOGGER.info("Getting bottleneck features validation set.")
+    t0 = time.perf_counter()
     val_bottleneck_features = model.predict_generator(val_generator,
                                                       N_VALIDATION_SAMPLES // BATCH_SIZE)
+    LOGGER.info("Validation bottleneck features computed in %d seconds.", time.perf_counter() - t0)
+    LOGGER.info("Saving validation bottleneck features in %s", VAL_BOTTLENECK_FEATURES_PATH)
+    np.save(VAL_BOTTLENECK_FEATURES_PATH, val_bottleneck_features)
+
+    return train_bottleneck_features, val_bottleneck_features
+
+
+def get_bottleneck_features(use_cache=False):
+    """
+    Get bottleneck features from either a cache, or by computing them from scratch.
+
+    Args:
+        use_cache: Boolean that indicates whether or not to use a cache.
+
+    Returns:
+        The values of both the train and validation set features in the bottleneck layer.
+    """
+    if use_cache:
+        LOGGER.info("Loading cached bottleneck features.")
+        train_bottleneck_features = np.load(TRAIN_BOTTLENECK_FEATURES_PATH)
+        val_bottleneck_features = np.load(VAL_BOTTLENECK_FEATURES_PATH)
+
+    else:
+        LOGGER.info("No cache used. Computing bottleneck layers from scratch.")
+        train_bottleneck_features, val_bottleneck_features = compute_bottleneck_features()
 
     return train_bottleneck_features, val_bottleneck_features
 
@@ -257,7 +295,8 @@ def plot_train_process(history):
 
 def main():
     # Cache the feature values of the bottleneck layer.
-    train_bottleneck_features, val_bottleneck_features = save_bottleneck_features()
+    train_bottleneck_features, val_bottleneck_features = get_bottleneck_features(
+        use_cache=USE_CACHE)
 
     # Define the labels of the train and validation set, which are just zeroes for the first class
     # (house) and ones for the second class (apartment building).
