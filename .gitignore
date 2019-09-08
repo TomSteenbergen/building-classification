@@ -1,5 +1,6 @@
 # IntelliJ configuration
 .idea
 
-# Temporary files
-*.csv
+# Input or  files
+input_files
+output_files

@@ -1,0 +1,290 @@
+import logging
+import math
+import sys
+from datetime import datetime
+
+import matplotlib.pyplot as plt
+import numpy as np
+from keras import layers
+from keras import models
+from keras import optimizers
+from keras.applications import VGG16
+from keras.callbacks import ModelCheckpoint, EarlyStopping
+from keras.preprocessing.image import ImageDataGenerator
+
+LOGGER = logging.getLogger('train')
+
+# Set paths and parameters
+RUN_TIME = datetime.utcnow()
+TRAIN_DIR = "input_files/train_building"
+VALIDATION_DIR = "input_files/val_building"
+
+OUTPUT_DIR = f"output_files/{RUN_TIME}/"
+TOP_MODEL_WEIGHTS_PATH = OUTPUT_DIR + "bottleneck_weights.h5"
+MODEL_CHECKPOINT_PATH = OUTPUT_DIR + "model_checkpoints/epoch_{epoch:02d}_val_acc_{val_acc:.2f}.h5"
+FINAL_MODEL_PATH = OUTPUT_DIR + "final_building_model.h5"
+
+IMAGE_SIZE = 256
+BATCH_SIZE = 20
+N_EPOCHS = 100
+
+CLASSES = ['house', 'apartment_building-outdoor']
+N_TRAIN_SAMPLES = 10000
+N_VALIDATION_SAMPLES = 200
+
+
+def save_bottleneck_features():
+    """
+    Cache the feature values of the data in the bottleneck layer in order to speed up training.
+
+    Returns:
+        The values of both the train and validation set features in the bottleneck layer.
+    """
+    datagen = ImageDataGenerator(rescale=1. / 255)
+
+    # Build the VGG16 network.
+    logging.info("Loading VGG16 model with ImageNet weights.")
+    model = VGG16(include_top=False, weights='imagenet')
+
+    LOGGER.info("Setting up train data generator.")
+    generator = datagen.flow_from_directory(
+        TRAIN_DIR,
+        target_size=(IMAGE_SIZE, IMAGE_SIZE),
+        batch_size=BATCH_SIZE,
+        classes=CLASSES,
+        class_mode=None,
+        shuffle=False)
+    LOGGER.info("Class indices: %s", generator.class_indices)
+
+    LOGGER.info("Getting bottleneck features of the train set.")
+    train_bottleneck_features = model.predict_generator(generator, N_TRAIN_SAMPLES // BATCH_SIZE)
+
+    LOGGER.info("Setting up validation data generator.")
+    generator = datagen.flow_from_directory(
+        VALIDATION_DIR,
+        target_size=(IMAGE_SIZE, IMAGE_SIZE),
+        batch_size=BATCH_SIZE,
+        classes=CLASSES,
+        class_mode=None,
+        shuffle=False)
+
+    LOGGER.info("Class indices: %s", generator.class_indices)
+
+    LOGGER.info("Getting bottleneck features validation set.")
+    val_bottleneck_features = model.predict_generator(generator, N_VALIDATION_SAMPLES // BATCH_SIZE)
+
+    return train_bottleneck_features, val_bottleneck_features
+
+
+def train_top_model(x_train, y_train, x_val, y_val):
+    """
+    Train the top layers of the model using the bottleneck features of the VGG16 model.
+    Args:
+        x_train: Training set features.
+        y_train: Training set labels.
+        x_val: Validation set features.
+        y_val: Validation set labels.
+
+    Returns:
+        Trained top model.
+    """
+    # Define model architecture.
+    model = models.Sequential()
+    model.add(layers.Flatten(input_shape=x_train.shape[1:]))
+    model.add(layers.Dense(100, activation='selu'))
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(1, activation='sigmoid'))
+
+    model.compile(optimizer=optimizers.Adam(),
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'])
+
+    # Train the model using early stopping.
+    early_stopping = EarlyStopping(monitor='val_loss', verbose=1,
+                                   restore_best_weights=True, patience=20)
+    callbacks_list = [early_stopping]
+
+    LOGGER.info("Fitting top model.")
+    model.fit(x_train, y_train,
+              epochs=N_EPOCHS,
+              batch_size=BATCH_SIZE,
+              validation_data=(x_val, y_val),
+              callbacks=callbacks_list)
+
+    LOGGER.info("Saving top model weights.")
+
+    return model
+
+
+def build_full_model():
+    """
+    Build the full model using trained top model layers.
+
+    Returns:
+        Full model with a VGG16 convolutional base and a trained top model.
+    """
+    # Build the VGG16 network.
+    model = models.Sequential()
+    model.add(VGG16(weights='imagenet', include_top=False,
+                    input_shape=(IMAGE_SIZE, IMAGE_SIZE, 3)))
+
+    # Build the model to put on top of the VGG16 model.
+    top_model = models.Sequential()
+    top_model.add(layers.Flatten(input_shape=model.output_shape[1:]))
+    top_model.add(layers.Dense(100, activation='selu'))
+    top_model.add(layers.Dropout(0.5))
+    top_model.add(layers.Dense(1, activation='sigmoid'))
+
+    # Note that it is necessary to start with a fully-trained classifier, including the top
+    # classifier, in order to successfully do fine-tuning.
+    top_model.load_weights(TOP_MODEL_WEIGHTS_PATH)
+
+    # Add the model on top of the convolutional base.
+    model.add(top_model)
+
+    # Show a summary of the model
+    LOGGER.info(model.summary())
+
+    return model
+
+
+def get_data_generators():
+    """
+    Create data generators for the training set and validation set.
+
+    Returns:
+        Training and validation set data generators.
+    """
+    train_datagen = ImageDataGenerator(
+        rescale=1. / 255,
+        rotation_range=20,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        horizontal_flip=True)
+
+    validation_datagen = ImageDataGenerator(rescale=1. / 255)
+
+    train_generator = train_datagen.flow_from_directory(
+        TRAIN_DIR,
+        target_size=(IMAGE_SIZE, IMAGE_SIZE),
+        batch_size=TRAIN_DIR,
+        classes=['house', 'appartment_building'],
+        class_mode='binary')
+
+    validation_generator = validation_datagen.flow_from_directory(
+        VALIDATION_DIR,
+        target_size=(IMAGE_SIZE, IMAGE_SIZE),
+        batch_size=BATCH_SIZE,
+        classes=['house', 'appartment_building'],
+        class_mode='binary',
+        shuffle=False)
+
+    return train_generator, validation_generator
+
+
+def train_full_model(model, train_generator, validation_generator):
+    """
+    Train the full model and save the model object.
+
+    Args:
+        model: Full model that will be trained.
+        train_generator: Data generator for the training set.
+        validation_generator: Data generator for the validation set.
+
+    Returns:
+        History of the training process.
+    """
+    # Define callbacks and compile the model.
+    early_stopping = EarlyStopping(monitor='val_loss',
+                                   verbose=1,
+                                   restore_best_weights=True,
+                                   patience=20)
+    model_checkpoint = ModelCheckpoint(MODEL_CHECKPOINT_PATH,
+                                       monitor='val_loss',
+                                       mode='min',
+                                       verbose=1)
+    callbacks_list = [early_stopping, model_checkpoint]
+
+    model.compile(loss='binary_crossentropy',
+                  optimizer=optimizers.SGD(lr=1e-4, momentum=0.9),
+                  metrics=['accuracy'],
+                  callbacks=callbacks_list)
+
+    # Fine-tune the model.
+    history = model.fit_generator(
+        train_generator,
+        steps_per_epoch=math.ceil(train_generator.samples / train_generator.batch_size),
+        epochs=N_EPOCHS,
+        validation_data=validation_generator,
+        validation_steps=math.ceil(validation_generator.samples / validation_generator.batch_size),
+        verbose=1)
+
+    # Save the model
+    model.save(FINAL_MODEL_PATH)
+
+    return history
+
+
+def plot_train_process(history):
+    """
+
+
+    Args:
+        history:
+
+    Returns:
+
+    """
+    # Plot training results
+    accuracy = history.history['accuracy']
+    LOGGER.info("Model accuracy: %f", accuracy)
+    val_accuracy = history.history['val_accuracy']
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+
+    plt.plot(N_EPOCHS, accuracy, 'b', label='Training accuracy')
+    plt.plot(N_EPOCHS, val_accuracy, 'r', label='Validation accuracy')
+    plt.title('Training and validation accuracy')
+    plt.legend()
+
+    plt.figure()
+
+    plt.plot(N_EPOCHS, loss, 'b', label='Training loss')
+    plt.plot(N_EPOCHS, val_loss, 'r', label='Validation loss')
+    plt.title('Training and validation loss')
+    plt.legend()
+
+    plt.show()
+
+
+def main():
+    # Cache the feature values of the bottleneck layer.
+    train_bottleneck_features, val_bottleneck_features = save_bottleneck_features()
+
+    # Define the labels of the train and validation set, which are just zeroes for the first class
+    # (house) and ones for the second class (apartment building).
+    y_train = np.array([0] * int(N_TRAIN_SAMPLES / 2) + [1] * int(N_TRAIN_SAMPLES / 2))
+    y_val = np.array([0] * int(N_VALIDATION_SAMPLES / 2) + [1] * int(N_VALIDATION_SAMPLES / 2))
+
+    # Train top model using bottleneck features as input and store weights.
+    top_model = train_top_model(train_bottleneck_features, y_train, val_bottleneck_features, y_val)
+    top_model.save_weights(TOP_MODEL_WEIGHTS_PATH)
+
+    # Build the full model.
+    model = build_full_model()
+
+    # Freeze the first 25 layers (up until the last convolutional block).
+    for layer in model.layers[:25]:
+        layer.trainable = False
+
+    # Get data generators, train the full model and visualize results.
+    train_generator, validation_generator = get_data_generators()
+    history = train_full_model(model, train_generator, validation_generator)
+    plot_train_process(history)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                        format='%(asctime)s %(name)-4s: %(module)-4s :%(levelname)-8s %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S')
+    main()
