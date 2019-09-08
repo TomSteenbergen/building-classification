@@ -1,6 +1,6 @@
 # IntelliJ configuration
 .idea
 
-# Input or  files
+# Input and output files
 input_files
 output_files
