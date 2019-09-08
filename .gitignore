@@ -1,0 +1,5 @@
+# IntelliJ configuration
+.idea
+
+# Temporary files
+*.csv
