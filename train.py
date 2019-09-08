@@ -15,11 +15,10 @@ from keras.preprocessing.image import ImageDataGenerator
 LOGGER = logging.getLogger('train')
 
 # Set paths and parameters
-RUN_TIME = datetime.utcnow()
-TRAIN_DIR = "input_files/train_building"
+TRAIN_DIR = "input_files/train_building"  # Includes data on each class grouped in a subdirectory.
 VALIDATION_DIR = "input_files/val_building"
 
-OUTPUT_DIR = f"output_files/{RUN_TIME}/"
+OUTPUT_DIR = f"output_files/{datetime.utcnow()}/"
 TOP_MODEL_WEIGHTS_PATH = OUTPUT_DIR + "bottleneck_weights.h5"
 MODEL_CHECKPOINT_PATH = OUTPUT_DIR + "model_checkpoints/epoch_{epoch:02d}_val_acc_{val_acc:.2f}.h5"
 FINAL_MODEL_PATH = OUTPUT_DIR + "final_building_model.h5"
@@ -28,7 +27,7 @@ IMAGE_SIZE = 256
 BATCH_SIZE = 20
 N_EPOCHS = 100
 
-CLASSES = ['house', 'apartment_building-outdoor']
+CLASSES = ['house', 'apartment_building-outdoor']  # We could add a third class: 'street' (other).
 N_TRAIN_SAMPLES = 10000
 N_VALIDATION_SAMPLES = 200
 
@@ -40,27 +39,28 @@ def save_bottleneck_features():
     Returns:
         The values of both the train and validation set features in the bottleneck layer.
     """
-    datagen = ImageDataGenerator(rescale=1. / 255)
-
     # Build the VGG16 network.
     logging.info("Loading VGG16 model with ImageNet weights.")
     model = VGG16(include_top=False, weights='imagenet')
 
     LOGGER.info("Setting up train data generator.")
-    generator = datagen.flow_from_directory(
+    train_datagen = ImageDataGenerator(rescale=1. / 255)
+    train_generator = train_datagen.flow_from_directory(
         TRAIN_DIR,
         target_size=(IMAGE_SIZE, IMAGE_SIZE),
         batch_size=BATCH_SIZE,
         classes=CLASSES,
         class_mode=None,
         shuffle=False)
-    LOGGER.info("Class indices: %s", generator.class_indices)
+    LOGGER.info("Class indices train set: %s", train_generator.class_indices)
 
     LOGGER.info("Getting bottleneck features of the train set.")
-    train_bottleneck_features = model.predict_generator(generator, N_TRAIN_SAMPLES // BATCH_SIZE)
+    train_bottleneck_features = model.predict_generator(train_generator,
+                                                        N_TRAIN_SAMPLES // BATCH_SIZE)
 
     LOGGER.info("Setting up validation data generator.")
-    generator = datagen.flow_from_directory(
+    val_datagen = ImageDataGenerator(rescale=1. / 255)
+    val_generator = val_datagen.flow_from_directory(
         VALIDATION_DIR,
         target_size=(IMAGE_SIZE, IMAGE_SIZE),
         batch_size=BATCH_SIZE,
@@ -68,10 +68,11 @@ def save_bottleneck_features():
         class_mode=None,
         shuffle=False)
 
-    LOGGER.info("Class indices: %s", generator.class_indices)
+    LOGGER.info("Class indices validation set: %s", val_generator.class_indices)
 
     LOGGER.info("Getting bottleneck features validation set.")
-    val_bottleneck_features = model.predict_generator(generator, N_VALIDATION_SAMPLES // BATCH_SIZE)
+    val_bottleneck_features = model.predict_generator(val_generator,
+                                                      N_VALIDATION_SAMPLES // BATCH_SIZE)
 
     return train_bottleneck_features, val_bottleneck_features
 
@@ -161,21 +162,19 @@ def get_data_generators():
         width_shift_range=0.2,
         height_shift_range=0.2,
         horizontal_flip=True)
-
-    validation_datagen = ImageDataGenerator(rescale=1. / 255)
-
     train_generator = train_datagen.flow_from_directory(
         TRAIN_DIR,
         target_size=(IMAGE_SIZE, IMAGE_SIZE),
         batch_size=TRAIN_DIR,
-        classes=['house', 'appartment_building'],
+        classes=CLASSES,
         class_mode='binary')
 
+    validation_datagen = ImageDataGenerator(rescale=1. / 255)
     validation_generator = validation_datagen.flow_from_directory(
         VALIDATION_DIR,
         target_size=(IMAGE_SIZE, IMAGE_SIZE),
         batch_size=BATCH_SIZE,
-        classes=['house', 'appartment_building'],
+        classes=CLASSES,
         class_mode='binary',
         shuffle=False)
 
@@ -227,18 +226,17 @@ def train_full_model(model, train_generator, validation_generator):
 
 def plot_train_process(history):
     """
-
+    Plot the training process.
 
     Args:
-        history:
-
-    Returns:
-
+        history: History of the training process.
     """
     # Plot training results
     accuracy = history.history['accuracy']
     LOGGER.info("Model accuracy: %f", accuracy)
     val_accuracy = history.history['val_accuracy']
+    LOGGER.info("Model validation accuracy: %f", val_accuracy)
+
     loss = history.history['loss']
     val_loss = history.history['val_loss']
 
