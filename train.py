@@ -19,7 +19,7 @@ LOGGER = logging.getLogger('train')
 # Set paths and parameters
 IMAGE_SIZE = 256
 BATCH_SIZE = 32
-N_EPOCHS = 100
+N_EPOCHS = 1
 
 CLASSES = ['house', 'apartment_building-outdoor']  # We could add a third class: 'street' (other).
 N_TRAIN_SAMPLES = 10000
@@ -273,9 +273,9 @@ def plot_train_process(history):
         history: History of the training process.
     """
     # Plot training results
-    accuracy = history.history['accuracy']
+    accuracy = history.history['acc']
     LOGGER.info("Model accuracy: %f", accuracy)
-    val_accuracy = history.history['val_accuracy']
+    val_accuracy = history.history['val_acc']
     LOGGER.info("Model validation accuracy: %f", val_accuracy)
 
     loss = history.history['loss']
