@@ -37,8 +37,11 @@ TRAIN_BOTTLENECK_FEATURES_PATH = f"input_files/train_bottleneck_features_{CLASSE
 VAL_BOTTLENECK_FEATURES_PATH = f"input_files/val_bottleneck_features_{CLASSES}.npy"
 
 TOP_MODEL_WEIGHTS_PATH = OUTPUT_DIR + "bottleneck_weights.h5"
-MODEL_CHECKPOINT_PATH = OUTPUT_DIR + "model_checkpoints/epoch_{epoch:02d}_val_acc_{val_acc:.2f}.h5"
 FINAL_MODEL_PATH = OUTPUT_DIR + "final_building_model.h5"
+
+MODEL_CHECKPOINT_DIR = OUTPUT_DIR + "model_checkpoints/"
+MODEL_CHECKPOINT_PATH = MODEL_CHECKPOINT_DIR + "epoch_{epoch:02d}_val_acc_{val_acc:.2f}.h5"
+os.makedirs(MODEL_CHECKPOINT_DIR, exist_ok=True)
 
 
 def compute_bottleneck_features():
@@ -171,7 +174,7 @@ def build_full_model():
     top_model = models.Sequential()
     top_model.add(layers.Flatten(input_shape=model.output_shape[1:]))
     top_model.add(layers.Dense(100, activation='selu'))
-    top_model.add(layers.Dropout(0.5))
+    top_model.add(layers.Dropout(0.5))  # TODO: Try training a model without or with a higher rate.
     top_model.add(layers.Dense(1, activation='sigmoid'))
 
     # Note that it is necessary to start with a fully-trained classifier, including the top
@@ -244,8 +247,7 @@ def train_full_model(model, train_generator, validation_generator):
 
     model.compile(loss='binary_crossentropy',
                   optimizer=optimizers.SGD(lr=1e-4, momentum=0.9),
-                  metrics=['accuracy'],
-                  callbacks=callbacks_list)
+                  metrics=['accuracy'])
 
     # Fine-tune the model.
     history = model.fit_generator(
@@ -254,6 +256,7 @@ def train_full_model(model, train_generator, validation_generator):
         epochs=N_EPOCHS,
         validation_data=validation_generator,
         validation_steps=math.ceil(validation_generator.samples / validation_generator.batch_size),
+        callbacks=callbacks_list,
         verbose=1)
 
     # Save the model
