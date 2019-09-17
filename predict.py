@@ -17,7 +17,7 @@ from keras.models import load_model
 from keras.preprocessing import image
 from requests.utils import requote_uri
 
-LOGGER = logging.getLogger('train')
+LOGGER = logging.getLogger(__name__)
 
 # Set paths and API specifications
 MODEL_PATH = "output_files/2019-09-08 20:32/final_building_model.h5"

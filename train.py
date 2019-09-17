@@ -14,7 +14,7 @@ from keras.applications import VGG16
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from keras.preprocessing.image import ImageDataGenerator
 
-LOGGER = logging.getLogger('train')
+LOGGER = logging.getLogger(__name__)
 
 # Set paths and parameters
 IMAGE_SIZE = 256
