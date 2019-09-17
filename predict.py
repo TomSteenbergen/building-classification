@@ -76,6 +76,7 @@ def get_and_save_street_view_image(location, api_key):
 
 
 def main():
+    # Get model and API key.
     model = load_model(MODEL_PATH)
     api_key = os.getenv("API_KEY")
 
@@ -88,12 +89,13 @@ def main():
         predicted_addresses = []
 
     line_count = 0
-
     # Loop over all addresses.
     with open(ADDRESSES_PATH, "r") as address_file, open(PREDICTIONS_PATH, "a") as prediction_file:
+        # Initialize csv reader and writer.
         address_reader = csv.reader(address_file)
         prediction_writer = csv.writer(prediction_file)
 
+        # Loop over all addresses and keep track of addresses checked.
         for row in address_reader:
             if line_count == 0:
                 LOGGER.info("Column names are %s", ", ".join(row))
