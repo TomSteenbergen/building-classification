@@ -58,7 +58,7 @@ def check_image_status(location, api_key):
         raise ValueError("Request invalid. URL used: %s", url)
 
     else:
-        LOGGER.warning("Image for location %s gives status code %s", location,
+        LOGGER.warning("Image for location '%s' gives status code '%s'", location,
                        status)
         return False
 
@@ -129,6 +129,9 @@ def main():
                 prediction_writer.writerow([address, prediction_class])
             else:
                 raise KeyError("Could not map class using prediction %d", prediction)
+
+            if line_count % 100 == 0:
+                LOGGER.info("%s requests made.", line_count)
 
             if line_count == 1000:
                 LOGGER.info("1000 requests made, exiting process now.")
