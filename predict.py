@@ -132,12 +132,12 @@ def main():
             else:
                 raise KeyError("Could not map class using prediction %d", prediction)
 
-            if line_count % 100 == 0:
-                LOGGER.info("%s requests made.", line_count)
-
             if line_count == 1000:
                 LOGGER.info("1000 requests made, exiting process now.")
                 sys.exit()
+
+            elif line_count % 100 == 0:
+                LOGGER.info("%s requests made.", line_count)
 
 
 if __name__ == "__main__":
