@@ -64,9 +64,6 @@ def get_and_save_street_view_image(location, api_key):
 
     response = requests.get(url)
 
-    if local_path.exists():
-        LOGGER.warning("%s already exists. Overwriting this file!", local_path)
-
     with open(local_path, "wb+") as file:
         file.write(response.content)
 
@@ -102,6 +99,8 @@ def main():
 
             # Check if address is already predicted for. If so, continue to the next address.
             address = row[5]
+            image_path = None
+            
             if address in predicted_addresses:
                 continue
 
@@ -131,11 +130,11 @@ def main():
                 predicted_addresses.append(address)
                 line_count += 1
 
-                if line_count - 1 == 1000:
+                if (line_count - 1) == 1000:
                     LOGGER.info("1000 requests made, exiting process now.")
                     sys.exit()
 
-                elif line_count - 1 % 100 == 0:
+                elif (line_count - 1) % 100 == 0:
                     LOGGER.info("%s requests made.", line_count)
 
 
