@@ -1,8 +1,3 @@
-"""
-- Fetch file with address list
-- Download data from Google Street View API using address list
-- Load model and predict
-"""
 import csv
 import json
 import logging
@@ -102,42 +97,42 @@ def main():
                 line_count += 1
                 continue
 
-            else:
-                # Check if address is already predicted for. If so, continue to the next address.
-                address = row[5]
-                if address in predicted_addresses:
-                    continue
+            # Check if address is already predicted for. If so, continue to the next address.
+            address = row[5]
+            if address in predicted_addresses:
+                continue
 
-                # If not, try to fetch the image from Google Street View API.
-                try:
-                    if check_image_status(address, api_key):
-                        image_path = get_and_save_street_view_image(address, api_key)
+            # If not, try to fetch the image from Google Street View API.
+            try:
+                if check_image_status(address, api_key):
+                    image_path = get_and_save_street_view_image(address, api_key)
 
-                except Exception as e:
-                    LOGGER.info("Addresses fetched from API: %d", line_count - 1)
-                    LOGGER.info(e)
+            except Exception as e:
+                LOGGER.info("Addresses fetched from API: %d", line_count - 1)
+                raise e
+
+            # Predict the image that we fetched using the model loaded.
+            if image_path:
+                img = image.load_img(image_path, target_size=(IMAGE_SIZE, IMAGE_SIZE))
+                x = image.img_to_array(img) / 255
+                x = np.expand_dims(x, axis=0)
+
+                prediction = model.predict_classes(x)
+                prediction_class = CLASS_MAPPING.get(prediction[0][0], None)
+
+                if prediction_class:
+                    prediction_writer.writerow([address, prediction_class])
+                else:
+                    raise KeyError("Could not map class using prediction %d", prediction)
 
                 line_count += 1
 
-            # Predict the image that we fetched using the model loaded.
-            img = image.load_img(image_path, target_size=(IMAGE_SIZE, IMAGE_SIZE))
-            x = image.img_to_array(img) / 255
-            x = np.expand_dims(x, axis=0)
+                if line_count == 1000:
+                    LOGGER.info("1000 requests made, exiting process now.")
+                    sys.exit()
 
-            prediction = model.predict_classes(x)
-            prediction_class = CLASS_MAPPING.get(prediction[0][0], None)
-
-            if prediction_class:
-                prediction_writer.writerow([address, prediction_class])
-            else:
-                raise KeyError("Could not map class using prediction %d", prediction)
-
-            if line_count == 1000:
-                LOGGER.info("1000 requests made, exiting process now.")
-                sys.exit()
-
-            elif line_count % 100 == 0:
-                LOGGER.info("%s requests made.", line_count)
+                elif line_count % 100 == 0:
+                    LOGGER.info("%s requests made.", line_count)
 
 
 if __name__ == "__main__":
