@@ -100,7 +100,7 @@ def main():
             # Check if address is already predicted for. If so, continue to the next address.
             address = row[5]
             image_path = None
-            
+
             if address in predicted_addresses:
                 continue
 
@@ -135,7 +135,7 @@ def main():
                     sys.exit()
 
                 elif (line_count - 1) % 100 == 0:
-                    LOGGER.info("%s requests made.", line_count)
+                    LOGGER.info("%s requests made.", line_count - 1)
 
 
 if __name__ == "__main__":
